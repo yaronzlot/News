@@ -74,14 +74,7 @@
       font-size:14px;color:var(--text-dim);letter-spacing:.2em;
       text-transform:uppercase;margin-bottom:12px;
     }
-    .sources-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:32px}
-    .src-btn {
-      padding:9px 16px;background:var(--bg2);border:1px solid var(--border);
-      color:var(--text-muted);cursor:pointer;font-size:16px;
-      font-family:Arial, sans-serif;border-radius:2px;transition:all .18s;
-    }
-    .src-btn:hover{border-color:var(--gold);color:var(--text)}
-    .src-btn.active{background:var(--gold);border-color:var(--gold);color:#ffffff;font-weight:700}
+    .sources-grid{display:none}
 
     /* ── ARTICLES ── */
     .articles-header{
@@ -186,12 +179,10 @@
 </header>
 
 <main>
-  <div class="section-label">▼ בחר נושא / ערוץ</div>
-  <div class="sources-grid" id="sources"></div>
   <div id="content">
     <div class="state-box">
-      <div class="icon">📰</div>
-      <div class="title">בחר נושא או ערוץ כדי להתחיל</div>
+      <div class="loading-spinner"></div>
+      <div class="title" style="color:var(--gold);letter-spacing:.15em">טוען כתבות...</div>
     </div>
   </div>
 </main>
@@ -247,22 +238,8 @@ function tick() {
 }
 tick(); setInterval(tick, 1000);
 
-// ── Buttons ────────────────────────────────────────────────────────────────
-function buildSourceButtons() {
-  const grid = document.getElementById('sources');
-  grid.innerHTML = '';
-  SOURCES.forEach(src => {
-    const btn = document.createElement('button');
-    btn.className = 'src-btn' + (activeSource?.id === src.id ? ' active' : '');
-    btn.dataset.id = src.id;
-    btn.textContent = src.name;
-    btn.addEventListener('click', () => fetchFeed(src, false));
-    grid.appendChild(btn);
-  });
-}
-buildSourceButtons();
-
-const defaultSrc = SOURCES.find(s => s.id === 'security');
+// ── Auto-load ראשי on startup ──────────────────────────────────────────────
+const defaultSrc = SOURCES.find(s => s.id === 'top-il');
 if (defaultSrc) fetchFeed(defaultSrc, false);
 
 document.getElementById('refresh-btn').addEventListener('click', () => {
@@ -299,9 +276,6 @@ function buildRssUrl(src) {
 }
 
 async function fetchFeed(src, force = false, silent = false) {
-  document.querySelectorAll('.src-btn').forEach(b => b.classList.remove('active'));
-  const btn = document.querySelector(`.src-btn[data-id="${src.id}"]`);
-  if (btn) btn.classList.add('active');
   activeSource = src;
   document.getElementById('refresh-btn').disabled = false;
 
