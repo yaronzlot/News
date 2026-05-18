@@ -224,7 +224,27 @@
 <footer>עיתון ברשת &middot; Google News RSS &middot; 2026</footer>
 
 <script>
-const PROXY = 'https://api.allorigins.win/get?url=';
+// Multiple CORS proxies — tried in order until one succeeds
+const PROXIES = [
+  { url: 'https://api.allorigins.win/get?url=',      parse: async r => { const d = await r.json(); return d.contents; } },
+  { url: 'https://corsproxy.io/?',                   parse: async r => r.text() },
+  { url: 'https://api.codetabs.com/v1/proxy?quest=', parse: async r => r.text() },
+];
+
+async function fetchWithFallback(targetUrl) {
+  let lastErr;
+  for (const proxy of PROXIES) {
+    try {
+      const res = await fetch(proxy.url + encodeURIComponent(targetUrl),
+        { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) throw new Error('status ' + res.status);
+      const text = await proxy.parse(res);
+      if (!text) throw new Error('empty');
+      return text;
+    } catch(e) { lastErr = e; }
+  }
+  throw new Error('כל הפרוקסי נכשלו – ' + lastErr?.message);
+}
 
 const SOURCES = {
   he: [
@@ -354,13 +374,9 @@ async function fetchFeed(src, force = false, silent = false) {
   setRefreshBtnLoading(true);
 
   try {
-    const rssUrl  = buildRssUrl(src);
-    const proxied = PROXY + encodeURIComponent(rssUrl);
-    const res     = await fetch(proxied);
-    if (!res.ok) throw new Error('שגיאת רשת ' + res.status);
-
-    const outer = await res.json();
-    const xml   = new DOMParser().parseFromString(outer.contents, 'text/xml');
+    const rssUrl = buildRssUrl(src);
+    const xmlText = await fetchWithFallback(rssUrl);
+    const xml   = new DOMParser().parseFromString(xmlText, 'text/xml');
     const items = [...xml.querySelectorAll('item')];
 
     if (!items.length) throw new Error('לא נמצאו כתבות. נסה נושא אחר.');
