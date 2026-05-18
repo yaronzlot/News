@@ -64,28 +64,8 @@
     #refresh-btn .spin { display: inline-block; animation: spin .7s linear infinite; }
 
     /* ── COUNTDOWN ── */
-    #countdown-bar {
-      height: 2px; background: var(--bg3); overflow: hidden;
-    }
-    #countdown-fill {
-      height: 100%; background: var(--gold);
-      transition: width 1s linear;
-    }
-
-    /* ── TABS ── */
-    .tabs-row {
-      display:flex; overflow-x:auto; border-top:1px solid var(--border);
-      scrollbar-width:none;
-    }
-    .tabs-row::-webkit-scrollbar{display:none}
-    .tab-btn {
-      padding:9px 18px; background:none; border:none;
-      border-bottom:2px solid transparent; color:var(--text-muted);
-      cursor:pointer; font-size:16px; font-family:Arial, sans-serif;
-      letter-spacing:.05em; white-space:nowrap; transition:all .2s;
-    }
-    .tab-btn:hover{color:var(--text)}
-    .tab-btn.active{color:var(--gold);border-bottom-color:var(--gold)}
+    #countdown-bar { height: 2px; background: var(--bg3); overflow: hidden; }
+    #countdown-fill { height: 100%; background: var(--gold); transition: width 1s linear; }
 
     /* ── MAIN ── */
     main{max-width:1200px;margin:0 auto;padding:28px 20px;position:relative;z-index:1}
@@ -128,7 +108,6 @@
       font-size:clamp(28px,4vw,42px);font-weight:900;
       color:var(--text);margin-bottom:12px;line-height:1.3;
     }
-    .featured .src-line{font-size:14px;color:#777;margin-top:12px}
 
     .cards-grid{
       display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px;
@@ -149,13 +128,11 @@
       font-family:Arial, sans-serif;font-size:28px;font-weight:900;
       color:#000;line-height:1.4;text-shadow:0 0 0.3px #000;
     }
-    .card .card-src{font-size:14px;color:var(--text-dim);margin-top:10px}
 
     /* ── STATES ── */
     .state-box{text-align:center;padding:80px 20px}
     .state-box .icon{font-size:56px;opacity:.3;margin-bottom:20px}
     .state-box .title{font-size:20px;color:var(--text-muted);margin-bottom:8px}
-    .state-box .sub{font-size:16px;color:var(--text-dim)}
     .loading-spinner{
       display:inline-block;width:36px;height:36px;
       border:2px solid var(--border-accent);border-top-color:var(--gold);
@@ -176,11 +153,9 @@
     .card:nth-child(5){animation-delay:.20s}
     .card:nth-child(6){animation-delay:.25s}
 
-    /* ── BACKGROUND REFRESH NOTICE ── */
     .bg-refresh-notice {
       display: inline-flex; align-items: center; gap: 6px;
-      font-size: 13px; color: var(--gold); opacity: 0;
-      transition: opacity .4s;
+      font-size: 13px; color: var(--gold); opacity: 0; transition: opacity .4s;
     }
     .bg-refresh-notice.visible { opacity: 1; }
 
@@ -224,59 +199,43 @@
 <footer>עיתון ברשת &middot; Google News RSS &middot; 2026</footer>
 
 <script>
-// Multiple CORS proxies — tried in order until one succeeds
-const PROXIES = [
-  { url: 'https://api.allorigins.win/get?url=',      parse: async r => { const d = await r.json(); return d.contents; } },
-  { url: 'https://corsproxy.io/?',                   parse: async r => r.text() },
-  { url: 'https://api.codetabs.com/v1/proxy?quest=', parse: async r => r.text() },
-];
+// ── rss2json — ללא CORS, חינמי, 1000 בקשות ביום ──────────────────────────
+const RSS2JSON_API = 'https://api.rss2json.com/v1/api.json?rss_url=';
 
-async function fetchWithFallback(targetUrl) {
-  let lastErr;
-  for (const proxy of PROXIES) {
-    try {
-      const res = await fetch(proxy.url + encodeURIComponent(targetUrl),
-        { signal: AbortSignal.timeout(8000) });
-      if (!res.ok) throw new Error('status ' + res.status);
-      const text = await proxy.parse(res);
-      if (!text) throw new Error('empty');
-      return text;
-    } catch(e) { lastErr = e; }
-  }
-  throw new Error('כל הפרוקסי נכשלו – ' + lastErr?.message);
+async function fetchItems(rssUrl) {
+  const url = RSS2JSON_API + encodeURIComponent(rssUrl);
+  const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  if (!res.ok) throw new Error('שגיאת רשת ' + res.status);
+  const data = await res.json();
+  if (data.status !== 'ok') throw new Error(data.message || 'שגיאה בטעינה');
+  if (!data.items?.length) throw new Error('לא נמצאו כתבות');
+  return data.items;
 }
 
-const SOURCES = {
-  he: [
-    { id:'top-il',    name:'🔥 ראשי',       q:'חדשות' },
-    { id:'politics',  name:'🏛️ פוליטיקה',   q:'פוליטיקה ישראל' },
-    { id:'security',  name:'🛡️ ביטחון',      q:'ביטחון צבא ישראל' },
-    { id:'economy',   name:'📈 כלכלה',       q:'כלכלה שוק הון ישראל' },
-    { id:'tech',      name:'💻 טכנולוגיה',   q:'טכנולוגיה הייטק' },
-    { id:'sports',    name:'⚽ ספורט',       q:'ספורט ישראל' },
-    { id:'health',    name:'🏥 בריאות',       q:'בריאות רפואה' },
-    { id:'world',     name:'🌍 בינלאומי',    q:'חדשות עולם' },
-    { id:'ynet',      name:'ynet',           q:'site:ynet.co.il' },
-    { id:'walla',     name:'וואלה',          q:'site:news.walla.co.il' },
-    { id:'maariv',    name:'מעריב',          q:'site:maariv.co.il' },
-    { id:'haaretz',   name:'הארץ',           q:'site:haaretz.co.il' },
-    { id:'calcalist', name:'כלכליסט',        q:'site:calcalist.co.il' },
-    { id:'sport5',    name:'ספורט 5',        q:'site:sport5.co.il' },
-  ],
-};
+const SOURCES = [
+  { id:'top-il',    name:'🔥 ראשי',       q:'חדשות' },
+  { id:'politics',  name:'🏛️ פוליטיקה',   q:'פוליטיקה ישראל' },
+  { id:'security',  name:'🛡️ ביטחון',      q:'ביטחון צבא ישראל' },
+  { id:'economy',   name:'📈 כלכלה',       q:'כלכלה שוק הון ישראל' },
+  { id:'tech',      name:'💻 טכנולוגיה',   q:'טכנולוגיה הייטק' },
+  { id:'sports',    name:'⚽ ספורט',       q:'ספורט ישראל' },
+  { id:'health',    name:'🏥 בריאות',       q:'בריאות רפואה' },
+  { id:'world',     name:'🌍 בינלאומי',    q:'חדשות עולם' },
+  { id:'ynet',      name:'ynet',           q:'site:ynet.co.il' },
+  { id:'walla',     name:'וואלה',          q:'site:news.walla.co.il' },
+  { id:'maariv',    name:'מעריב',          q:'site:maariv.co.il' },
+  { id:'haaretz',   name:'הארץ',           q:'site:haaretz.co.il' },
+  { id:'calcalist', name:'כלכליסט',        q:'site:calcalist.co.il' },
+  { id:'sport5',    name:'ספורט 5',        q:'site:sport5.co.il' },
+];
 
-const LANG_PARAMS = {
-  he: { hl:'iw', gl:'IL', ceid:'IL:iw' },
-};
+const CACHE_TTL = 3 * 60 * 1000;
+const AUTO_REFRESH_SEC = 180;
 
-const CACHE_TTL = 3 * 60 * 1000; // 3 minutes in ms
-const AUTO_REFRESH_SEC = 180;     // countdown seconds
-
-let activeSource  = null;
-let cache         = {};           // { key: { articles, ts } }
-let refreshTimer  = null;
-let countdownInt  = null;
-let countdownSec  = 0;
+let activeSource = null;
+let cache = {};
+let countdownInt = null;
+let countdownSec = 0;
 
 // ── Clock ──────────────────────────────────────────────────────────────────
 function tick() {
@@ -288,11 +247,11 @@ function tick() {
 }
 tick(); setInterval(tick, 1000);
 
-// ── Source buttons ─────────────────────────────────────────────────────────
+// ── Buttons ────────────────────────────────────────────────────────────────
 function buildSourceButtons() {
   const grid = document.getElementById('sources');
   grid.innerHTML = '';
-  SOURCES.he.forEach(src => {
+  SOURCES.forEach(src => {
     const btn = document.createElement('button');
     btn.className = 'src-btn' + (activeSource?.id === src.id ? ' active' : '');
     btn.dataset.id = src.id;
@@ -303,16 +262,14 @@ function buildSourceButtons() {
 }
 buildSourceButtons();
 
-// ── Auto-load "security" on startup ───────────────────────────────────────
-const defaultSrc = SOURCES.he.find(s => s.id === 'security');
+const defaultSrc = SOURCES.find(s => s.id === 'security');
 if (defaultSrc) fetchFeed(defaultSrc, false);
 
-// ── Refresh button ─────────────────────────────────────────────────────────
 document.getElementById('refresh-btn').addEventListener('click', () => {
-  if (activeSource) fetchFeed(activeSource, true); // force = true
+  if (activeSource) fetchFeed(activeSource, true);
 });
 
-// ── Countdown bar ──────────────────────────────────────────────────────────
+// ── Countdown ──────────────────────────────────────────────────────────────
 function startCountdown() {
   clearInterval(countdownInt);
   countdownSec = AUTO_REFRESH_SEC;
@@ -320,80 +277,51 @@ function startCountdown() {
   countdownInt = setInterval(() => {
     countdownSec--;
     updateCountdownBar();
-    if (countdownSec <= 0) {
-      clearInterval(countdownInt);
-      if (activeSource) autoRefresh();
-    }
+    if (countdownSec <= 0) { clearInterval(countdownInt); if (activeSource) autoRefresh(); }
   }, 1000);
 }
-
 function updateCountdownBar() {
-  const pct = (countdownSec / AUTO_REFRESH_SEC) * 100;
-  document.getElementById('countdown-fill').style.width = pct + '%';
+  document.getElementById('countdown-fill').style.width =
+    (countdownSec / AUTO_REFRESH_SEC * 100) + '%';
 }
-
-// ── Auto-refresh (background, no loading flash) ────────────────────────────
 async function autoRefresh() {
-  if (!activeSource) return;
   const notice = document.getElementById('bg-notice');
   notice.classList.add('visible');
-  await fetchFeed(activeSource, true, true); // force + silent
+  await fetchFeed(activeSource, true, true);
   notice.classList.remove('visible');
   startCountdown();
 }
 
-// ── RSS URL ────────────────────────────────────────────────────────────────
+// ── Fetch ──────────────────────────────────────────────────────────────────
 function buildRssUrl(src) {
-  const p = LANG_PARAMS.he;
   const q = encodeURIComponent(src.q);
-  return `https://news.google.com/rss/search?q=${q}&hl=${p.hl}&gl=${p.gl}&ceid=${p.ceid}&num=20`;
+  return `https://news.google.com/rss/search?q=${q}&hl=iw&gl=IL&ceid=IL:iw&num=20`;
 }
 
-// ── Fetch ──────────────────────────────────────────────────────────────────
-// force=true  → bypass cache
-// silent=true → don't show loading spinner (background refresh)
 async function fetchFeed(src, force = false, silent = false) {
-  // Update active button
   document.querySelectorAll('.src-btn').forEach(b => b.classList.remove('active'));
   const btn = document.querySelector(`.src-btn[data-id="${src.id}"]`);
   if (btn) btn.classList.add('active');
   activeSource = src;
-
-  // Enable refresh button
   document.getElementById('refresh-btn').disabled = false;
 
-  // Cache hit?
-  const ck = 'he_' + src.id;
+  const ck = src.id;
   const hit = cache[ck];
-  if (!force && hit && (Date.now() - hit.ts) < CACHE_TTL) {
-    render(hit.articles);
-    return;
-  }
+  if (!force && hit && (Date.now() - hit.ts) < CACHE_TTL) { render(hit.articles); return; }
 
   if (!silent) showLoading();
   setRefreshBtnLoading(true);
 
   try {
-    const rssUrl = buildRssUrl(src);
-    const xmlText = await fetchWithFallback(rssUrl);
-    const xml   = new DOMParser().parseFromString(xmlText, 'text/xml');
-    const items = [...xml.querySelectorAll('item')];
-
-    if (!items.length) throw new Error('לא נמצאו כתבות. נסה נושא אחר.');
-
-    const articles = items.slice(0, 12).map(item => {
-      const title   = item.querySelector('title')?.textContent || '';
-      const link    = item.querySelector('link')?.textContent || '#';
-      const pubDate = item.querySelector('pubDate')?.textContent || '';
-      const srcName = item.querySelector('source')?.textContent || src.name;
-      const titleClean = title.replace(/\s-\s[^-]+$/, '').trim();
-      return { title: titleClean, url: link, time: relativeTime(pubDate), source: srcName };
-    });
-
+    const items = await fetchItems(buildRssUrl(src));
+    const articles = items.slice(0, 12).map(item => ({
+      title: (item.title || '').replace(/\s-\s[^-]+$/, '').trim(),
+      url:   item.link || '#',
+      time:  relativeTime(item.pubDate),
+      source: item.author || src.name,
+    }));
     cache[ck] = { articles, ts: Date.now() };
     render(articles);
-
-    // Restart countdown after every successful fetch
     startCountdown();
   } catch(e) {
     showError(e.message);
@@ -408,7 +336,7 @@ function setRefreshBtnLoading(on) {
   btn.innerHTML = on ? '<span class="spin">↻</span> טוען...' : '↻ רענן';
 }
 
-// ── Time helper ────────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────
 function relativeTime(str) {
   if (!str) return '';
   const d = new Date(str);
@@ -421,49 +349,42 @@ function relativeTime(str) {
   return `לפני ${Math.floor(h/24)} ימים`;
 }
 
-// ── Render ─────────────────────────────────────────────────────────────────
 function render(articles) {
   const now = new Date().toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});
-  let html = `
-    <div class="articles-header">
-      <span>${articles.length} כתבות</span>
-      <span class="updated">עודכן: ${now}</span>
-    </div>`;
+  let html = `<div class="articles-header">
+    <span>${articles.length} כתבות</span>
+    <span class="updated">עודכן: ${now}</span>
+  </div>`;
 
   const f = articles[0];
-  html += `
-    <a class="featured" href="${x(f.url)}" target="_blank" rel="noopener noreferrer">
-      <div class="meta">
-        <span class="badge-main">● ראשי</span>
-        <span style="font-size:11px;color:var(--text-muted)">${x(f.source)}</span>
-        <span style="font-size:11px;color:var(--text-dim)">${x(f.time)}</span>
-      </div>
-      <h2>${x(f.title)}</h2>
-    </a>`;
+  html += `<a class="featured" href="${x(f.url)}" target="_blank" rel="noopener noreferrer">
+    <div class="meta">
+      <span class="badge-main">● ראשי</span>
+      <span style="font-size:11px;color:var(--text-muted)">${x(f.source)}</span>
+      <span style="font-size:11px;color:var(--text-dim)">${x(f.time)}</span>
+    </div>
+    <h2>${x(f.title)}</h2>
+  </a>`;
 
   html += '<div class="cards-grid">';
   articles.slice(1).forEach(a => {
-    html += `
-      <a class="card" href="${x(a.url)}" target="_blank" rel="noopener noreferrer">
-        <div class="card-meta">
-          <span class="src-tag-small">${x(a.source)}</span>
-          <span class="time-tag">${x(a.time)}</span>
-        </div>
-        <h3>${x(a.title)}</h3>
-      </a>`;
+    html += `<a class="card" href="${x(a.url)}" target="_blank" rel="noopener noreferrer">
+      <div class="card-meta">
+        <span class="src-tag-small">${x(a.source)}</span>
+        <span class="time-tag">${x(a.time)}</span>
+      </div>
+      <h3>${x(a.title)}</h3>
+    </a>`;
   });
   html += '</div>';
-
   document.getElementById('content').innerHTML = html;
 }
 
-// ── States ─────────────────────────────────────────────────────────────────
 function showLoading() {
-  document.getElementById('content').innerHTML = `
-    <div class="state-box">
-      <div class="loading-spinner"></div>
-      <div class="title" style="color:var(--gold);letter-spacing:.15em">טוען כתבות...</div>
-    </div>`;
+  document.getElementById('content').innerHTML = `<div class="state-box">
+    <div class="loading-spinner"></div>
+    <div class="title" style="color:var(--gold);letter-spacing:.15em">טוען כתבות...</div>
+  </div>`;
 }
 
 function showError(msg) {
@@ -473,8 +394,7 @@ function showError(msg) {
 
 function x(s) {
   if (!s) return '';
-  return String(s)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 </script>
