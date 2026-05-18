@@ -50,6 +50,28 @@
       0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.8)}
     }
 
+    /* ── REFRESH BUTTON ── */
+    #refresh-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: none; border: 1px solid var(--gold);
+      color: var(--gold); cursor: pointer;
+      font-size: 13px; padding: 3px 10px; border-radius: 2px;
+      font-family: Arial, sans-serif; letter-spacing: .08em;
+      transition: all .18s;
+    }
+    #refresh-btn:hover { background: var(--gold); color: #fff; }
+    #refresh-btn:disabled { opacity: .45; cursor: default; }
+    #refresh-btn .spin { display: inline-block; animation: spin .7s linear infinite; }
+
+    /* ── COUNTDOWN ── */
+    #countdown-bar {
+      height: 2px; background: var(--bg3); overflow: hidden;
+    }
+    #countdown-fill {
+      height: 100%; background: var(--gold);
+      transition: width 1s linear;
+    }
+
     /* ── TABS ── */
     .tabs-row {
       display:flex; overflow-x:auto; border-top:1px solid var(--border);
@@ -154,6 +176,14 @@
     .card:nth-child(5){animation-delay:.20s}
     .card:nth-child(6){animation-delay:.25s}
 
+    /* ── BACKGROUND REFRESH NOTICE ── */
+    .bg-refresh-notice {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 13px; color: var(--gold); opacity: 0;
+      transition: opacity .4s;
+    }
+    .bg-refresh-notice.visible { opacity: 1; }
+
     footer{
       border-top:1px solid var(--border);padding:20px;text-align:center;
       font-size:14px;color:var(--text-dim);letter-spacing:.12em;
@@ -171,9 +201,13 @@
   <div class="topbar">
     <span id="clock">--:--:--</span>
     <span class="live-dot">LIVE NEWS</span>
-    <span id="datestr">--</span>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span class="bg-refresh-notice" id="bg-notice">↻ מתעדכן...</span>
+      <button id="refresh-btn" disabled title="רענן כתבות">↻ רענן</button>
+      <span id="datestr">--</span>
+    </div>
   </div>
-
+  <div id="countdown-bar"><div id="countdown-fill" style="width:100%"></div></div>
 </header>
 
 <main>
@@ -190,7 +224,6 @@
 <footer>עיתון ברשת &middot; Google News RSS &middot; 2026</footer>
 
 <script>
-// CORS proxy — lets us fetch Google News RSS from the browser / GitHub Pages
 const PROXY = 'https://api.allorigins.win/get?url=';
 
 const SOURCES = {
@@ -210,29 +243,22 @@ const SOURCES = {
     { id:'calcalist', name:'כלכליסט',        q:'site:calcalist.co.il' },
     { id:'sport5',    name:'ספורט 5',        q:'site:sport5.co.il' },
   ],
-  en: [
-    { id:'top-en',    name:'🔥 Top Stories', q:'top news today' },
-    { id:'world-en',  name:'🌍 World',       q:'world news' },
-    { id:'tech-en',   name:'💻 Technology',  q:'technology AI' },
-    { id:'business',  name:'📈 Business',    q:'business economy' },
-    { id:'science',   name:'🔬 Science',     q:'science research' },
-    { id:'bbc',       name:'BBC',            q:'site:bbc.com' },
-    { id:'cnn',       name:'CNN',            q:'site:cnn.com' },
-    { id:'guardian',  name:'Guardian',       q:'site:theguardian.com' },
-    { id:'reuters',   name:'Reuters',        q:'site:reuters.com' },
-    { id:'nytimes',   name:'NY Times',       q:'site:nytimes.com' },
-  ],
 };
 
 const LANG_PARAMS = {
   he: { hl:'iw', gl:'IL', ceid:'IL:iw' },
-  en: { hl:'en', gl:'US', ceid:'US:en' },
 };
 
-let activeSourceId = null;
-let cache = {};
+const CACHE_TTL = 3 * 60 * 1000; // 3 minutes in ms
+const AUTO_REFRESH_SEC = 180;     // countdown seconds
 
-// Clock
+let activeSource  = null;
+let cache         = {};           // { key: { articles, ts } }
+let refreshTimer  = null;
+let countdownInt  = null;
+let countdownSec  = 0;
+
+// ── Clock ──────────────────────────────────────────────────────────────────
 function tick() {
   const now = new Date();
   document.getElementById('clock').textContent =
@@ -242,35 +268,90 @@ function tick() {
 }
 tick(); setInterval(tick, 1000);
 
+// ── Source buttons ─────────────────────────────────────────────────────────
 function buildSourceButtons() {
   const grid = document.getElementById('sources');
   grid.innerHTML = '';
   SOURCES.he.forEach(src => {
     const btn = document.createElement('button');
-    btn.className = 'src-btn' + (src.id === activeSourceId ? ' active' : '');
+    btn.className = 'src-btn' + (activeSource?.id === src.id ? ' active' : '');
     btn.dataset.id = src.id;
     btn.textContent = src.name;
-    btn.addEventListener('click', () => fetchFeed(src));
+    btn.addEventListener('click', () => fetchFeed(src, false));
     grid.appendChild(btn);
   });
 }
 buildSourceButtons();
 
+// ── Auto-load "security" on startup ───────────────────────────────────────
+const defaultSrc = SOURCES.he.find(s => s.id === 'security');
+if (defaultSrc) fetchFeed(defaultSrc, false);
+
+// ── Refresh button ─────────────────────────────────────────────────────────
+document.getElementById('refresh-btn').addEventListener('click', () => {
+  if (activeSource) fetchFeed(activeSource, true); // force = true
+});
+
+// ── Countdown bar ──────────────────────────────────────────────────────────
+function startCountdown() {
+  clearInterval(countdownInt);
+  countdownSec = AUTO_REFRESH_SEC;
+  updateCountdownBar();
+  countdownInt = setInterval(() => {
+    countdownSec--;
+    updateCountdownBar();
+    if (countdownSec <= 0) {
+      clearInterval(countdownInt);
+      if (activeSource) autoRefresh();
+    }
+  }, 1000);
+}
+
+function updateCountdownBar() {
+  const pct = (countdownSec / AUTO_REFRESH_SEC) * 100;
+  document.getElementById('countdown-fill').style.width = pct + '%';
+}
+
+// ── Auto-refresh (background, no loading flash) ────────────────────────────
+async function autoRefresh() {
+  if (!activeSource) return;
+  const notice = document.getElementById('bg-notice');
+  notice.classList.add('visible');
+  await fetchFeed(activeSource, true, true); // force + silent
+  notice.classList.remove('visible');
+  startCountdown();
+}
+
+// ── RSS URL ────────────────────────────────────────────────────────────────
 function buildRssUrl(src) {
   const p = LANG_PARAMS.he;
   const q = encodeURIComponent(src.q);
   return `https://news.google.com/rss/search?q=${q}&hl=${p.hl}&gl=${p.gl}&ceid=${p.ceid}&num=20`;
 }
 
-async function fetchFeed(src) {
+// ── Fetch ──────────────────────────────────────────────────────────────────
+// force=true  → bypass cache
+// silent=true → don't show loading spinner (background refresh)
+async function fetchFeed(src, force = false, silent = false) {
+  // Update active button
   document.querySelectorAll('.src-btn').forEach(b => b.classList.remove('active'));
-  document.querySelector(`.src-btn[data-id="${src.id}"]`).classList.add('active');
-  activeSourceId = src.id;
+  const btn = document.querySelector(`.src-btn[data-id="${src.id}"]`);
+  if (btn) btn.classList.add('active');
+  activeSource = src;
 
+  // Enable refresh button
+  document.getElementById('refresh-btn').disabled = false;
+
+  // Cache hit?
   const ck = 'he_' + src.id;
-  if (cache[ck]) { render(cache[ck]); return; }
+  const hit = cache[ck];
+  if (!force && hit && (Date.now() - hit.ts) < CACHE_TTL) {
+    render(hit.articles);
+    return;
+  }
 
-  showLoading();
+  if (!silent) showLoading();
+  setRefreshBtnLoading(true);
 
   try {
     const rssUrl  = buildRssUrl(src);
@@ -285,24 +366,33 @@ async function fetchFeed(src) {
     if (!items.length) throw new Error('לא נמצאו כתבות. נסה נושא אחר.');
 
     const articles = items.slice(0, 12).map(item => {
-      const title    = item.querySelector('title')?.textContent || '';
-      const link     = item.querySelector('link')?.textContent || '#';
-      const pubDate  = item.querySelector('pubDate')?.textContent || '';
-      const srcName  = item.querySelector('source')?.textContent || src.name;
-
-      // Google News wraps real URL — extract from title "Headline - Source"
+      const title   = item.querySelector('title')?.textContent || '';
+      const link    = item.querySelector('link')?.textContent || '#';
+      const pubDate = item.querySelector('pubDate')?.textContent || '';
+      const srcName = item.querySelector('source')?.textContent || src.name;
       const titleClean = title.replace(/\s-\s[^-]+$/, '').trim();
-
       return { title: titleClean, url: link, time: relativeTime(pubDate), source: srcName };
     });
 
-    cache[ck] = articles;
+    cache[ck] = { articles, ts: Date.now() };
     render(articles);
+
+    // Restart countdown after every successful fetch
+    startCountdown();
   } catch(e) {
     showError(e.message);
+  } finally {
+    setRefreshBtnLoading(false);
   }
 }
 
+function setRefreshBtnLoading(on) {
+  const btn = document.getElementById('refresh-btn');
+  btn.disabled = on;
+  btn.innerHTML = on ? '<span class="spin">↻</span> טוען...' : '↻ רענן';
+}
+
+// ── Time helper ────────────────────────────────────────────────────────────
 function relativeTime(str) {
   if (!str) return '';
   const d = new Date(str);
@@ -315,6 +405,7 @@ function relativeTime(str) {
   return `לפני ${Math.floor(h/24)} ימים`;
 }
 
+// ── Render ─────────────────────────────────────────────────────────────────
 function render(articles) {
   const now = new Date().toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});
   let html = `
@@ -350,19 +441,12 @@ function render(articles) {
   document.getElementById('content').innerHTML = html;
 }
 
+// ── States ─────────────────────────────────────────────────────────────────
 function showLoading() {
   document.getElementById('content').innerHTML = `
     <div class="state-box">
       <div class="loading-spinner"></div>
       <div class="title" style="color:var(--gold);letter-spacing:.15em">טוען כתבות...</div>
-    </div>`;
-}
-
-function showWelcome() {
-  document.getElementById('content').innerHTML = `
-    <div class="state-box">
-      <div class="icon">📰</div>
-      <div class="title">בחר נושא או ערוץ כדי להתחיל</div>
     </div>`;
 }
 
